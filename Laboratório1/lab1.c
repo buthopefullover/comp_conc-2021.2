@@ -13,12 +13,15 @@ principal), para elevar ao quadrado cada elemento de um vetor de 10000 elementos
 #define max_number 10 //máximo elemento possível do vetor
 #define min_number 0 //mínimo elemento possível do vetor
 
-int vector[NELEMENTS]; //vetor original
 int pwrvector[NELEMENTS]; //vetor que será modificado, inicialmente identico ao original
-int divisions = (NELEMENTS/NTHREADS)-1; //quantos elementos cada thread operará em
+
+//cria a estrutura de dados para armazenar os argumentos da thread
+typedef struct {
+   int idThread, limit;
+} t_Args;
 
 
-//funcao para inicializar o vetor de forma aleatória com inteiro de 0 até 10
+//funcao para inicializar o vetor de forma aleatória com inteiro, nesse caso, de 0 até 10
 void initVector(int* vector) {
     srand(time(0));
     for(int i = 0; i < NELEMENTS; i++) {
@@ -27,22 +30,22 @@ void initVector(int* vector) {
     }
 }
 
-//funcao executada pelas threads
+//funcao executada pelas threads que efetua a elevação ao quadrado dos elementos do vetor
 void *Pwr2 (void* arg) {
-    int idThread = * (int*) arg;
+    t_Args *args = (t_Args *) arg;
 
-    int start = idThread*divisions; //calcula a posição de inicio da operação, dependendo de qual thread esta sendo executada
+    int start = args->idThread*args->limit; //calcula a posição de inicio da operação, dependendo de qual thread esta sendo executada
 
     //verifica se estamos na última thread, caso esteja efetua a operação até o final do vetor 
     //(para evitar erros com divisões com resto)
-    if (idThread+1 == NTHREADS){
+    if (args->idThread+1 == NTHREADS){
 	    for (int i = start; i<NELEMENTS; i++){
             pwrvector[i] = pwrvector[i] * pwrvector[i];
         }
     }
     else{
         //caso não esteja na última thread faz as operações nos elementos até atingir a quantidade calculada anteriormente (divisions)
-        for (int i = start; i <start+divisions; i++){
+        for (int i = start; i <start+args->limit; i++){
 		    pwrvector[i] = pwrvector[i] * pwrvector[i];
 	    }
     }
@@ -54,12 +57,24 @@ int main() {
     pthread_t tid_sistema[NTHREADS]; //identificadores das threads no sistema
     int thread; //variavel auxiliar
     int tid_local[NTHREADS]; //identificadores locais das threads
+    int divisions = (NELEMENTS/NTHREADS)-1; //quantos elementos cada thread operará em
+    t_Args *arg; //receberá os argumentos para a thread
+    int vector[NELEMENTS]; //vetor original
     
     initVector(vector); //inicializa o vetor
 
+    //cria as  threads
     for(thread=0; thread<NTHREADS; thread++) {
         tid_local[thread] = thread;
-        if (pthread_create(&tid_sistema[thread], NULL, Pwr2,  (void*) &tid_local[thread])) {
+
+        arg = malloc(sizeof(t_Args));
+        if (arg == NULL) {
+            printf("--ERRO: malloc()\n"); exit(-1);
+        }
+        arg->idThread = thread; 
+        arg->limit = divisions; 
+
+        if (pthread_create(&tid_sistema[thread], NULL, Pwr2,  (void*) (void*) arg)) {
         printf("--ERRO: pthread_create()\n"); exit(-1);
         }
     }
@@ -84,7 +99,7 @@ int main() {
     }
 
     //imprime se o resultado esta correto ou não
-    printf("%s\n", isCorrect ? "Calculos certos" : "Calculos errados");
+    printf("%s\n", isCorrect ? "Calculos corretos" : "Calculos errados");
 
     pthread_exit(NULL);
 }
