@@ -1,21 +1,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <pthread.h>
 
 #define MAX_RND 10 //máximo elemento possível do vetor
 #define MIN_RND 0 //mínimo elemento possível do vetor
 
 float *matrix1; //matriz multiplicadora
 float *matrix2; //matriz multiplicadora 
-float *result; //matriz de saida
+float *resultSeq; //matriz resultante sequencial
+float *resultConc; //matriz resultante concorrente
 
-void mulMatrix (int dim){
+typedef struct{
+ int id;
+ int size;
+ int total_threads;
+}TArgs;
+
+void *mulMatrixConc(void *arg) {
+    TArgs *args = (TArgs *) arg;
+
+    // Realiza a multiplicação para cada linha do resultado
+    // intercalando as linhas para cada thread
+    for(int i = args->id; i < args->size; i += args->total_threads) {
+        for(int j = 0; j < args->size; j++) {
+            for(int k = 0; k < args->size; k++) {
+                resultConc[i*args->size + j] += matrix1[i*args->size + k] * matrix2[k*args->size + j];
+            }
+        }
+    }
+
+    pthread_exit(NULL);
+}
+
+void mulMatrixSeq (int dim){
     int i, j, k;
     for (i = 0; i < dim; i++) {
         for (j = 0; j < dim; j++) {
-            result[i*dim + j] = 0;
+            resultSeq[i*dim + j] = 0;
             for (k = 0; k < dim; k++)
-                result[i*dim + j] += matrix1[i*dim + k] * matrix2[k*dim + j];
+                resultSeq[i*dim + j] += matrix1[i*dim + k] * matrix2[k*dim + j];
         }
     }
 }
@@ -42,32 +66,77 @@ void init_matrix(float matrix[], int dim) {
 
 int main (int argc, char* argv[]){
     int dim;
+    int nthreads;
+    pthread_t *tidSistema; //identificadores das threads no sistema
+    int thread; //variavel auxiliar
+    int *tidLocal; //identificadores locais das threads
+    TArgs *arg; //receberá os argumentos para a thread
 
-    if (argc<2) {
-        printf ("Digite: %s <dimensão das matrizes>", argv[0]);
+    if (argc<3) {
+        printf ("Falta argumentos. Digite: %s <dimensão das matrizes> <numero de threads>", argv[0]);
         return 1;
     }
 
-    //Pega os argumentos da linha de comando
     dim = atoi(argv[1]);
+    nthreads = atoi(argv[2]);
+
+    if(nthreads > dim) {
+        nthreads = dim;
+    }
+
+    tidSistema  = (pthread_t *) errorcheck_malloc(sizeof(pthread_t) * nthreads);
+    tidLocal  = (int *) errorcheck_malloc(sizeof(int) * nthreads);
     
     //Alocacao de memoria para as matrizes
     matrix1 = (float *) errorcheck_malloc(sizeof(float) * dim * dim);
     matrix2 = (float *) errorcheck_malloc(sizeof(float) * dim * dim);
-    result = (float *) errorcheck_malloc(sizeof(float) * dim * dim);
+    resultConc = (float *) errorcheck_malloc(sizeof(float) * dim * dim);
+    resultSeq = (float *) errorcheck_malloc(sizeof(float) * dim * dim);
 
 
     // Inicializa as matrizes aleatoriamente
     init_matrix(matrix1, dim);
     init_matrix(matrix2, dim);
 
-    
-    mulMatrix(dim);
+    mulMatrixSeq(dim);
 
-    printf("Matriz resultante: \n");
-    for (int i = 0; i < dim; i++) {
-        for (int j = 0; j < dim; j++)
-            printf("%f ", result[i*dim + j]);
-        printf("\n");
+    //cria as  threads
+    for(thread=0; thread<nthreads; thread++) {
+        tidLocal[thread] = thread;
+
+        arg = (TArgs *) errorcheck_malloc(sizeof(TArgs) * dim * dim);
+
+        arg->id = thread; 
+        arg->size = dim;
+        arg->total_threads = nthreads; 
+
+        if (pthread_create(&tidSistema[thread], NULL, mulMatrixConc,  (void*) arg)) {
+            printf("--ERRO: pthread_create()\n"); exit(-1);
+        }
     }
+
+    //espera todas as threads terminarem
+    for (thread=0; thread<nthreads; thread++) {
+        if (pthread_join(tidSistema[thread], NULL)) {
+            printf("--ERRO: pthread_join() \n"); exit(-1); 
+        } 
+    }
+
+    //bool para checar se operações estão corretas
+    int isCorrect = 1;
+
+    //itera pelo vetor comparando cada elemento do vetor original elevado ao quadrado com o vetor modificado
+    //caso algum não seja igual muda a variavel
+    for(int i = 0; i < dim; i++) {
+        for (int j=0; j < dim; j++)
+            if(resultSeq[i*dim + j] != resultConc[i*dim + j]) {
+                isCorrect = 0;
+                break;
+            }
+    }
+
+    //imprime se o resultado esta correto ou não
+    printf("%s\n", isCorrect ? "Calculos corretos" : "Calculos errados");
+
+    pthread_exit(NULL);
 }
