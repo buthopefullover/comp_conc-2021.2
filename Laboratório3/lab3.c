@@ -25,7 +25,7 @@ typedef struct {
 void init_vector(float* vector, int dim) {
     srand(time(0));
     for(int i = 0; i < dim; i++) {
-        vector[i] = rand() % (MAX_RND + 1 - MIN_RND) + MIN_RND;
+        vector[i] = rand() % ((MAX_RND + 1 - MIN_RND) + MIN_RND);
     }
 }
 
@@ -80,7 +80,6 @@ void *countInRangeConc(void* arg){
             }
 	    }
     }
-    printf("counter %d\n", *counter);
     pthread_exit((void *) counter);  
 }
 
@@ -183,7 +182,7 @@ int main(int argc, char *argv[]) {
     free(tidSistema);
     free(tidLocal);
     free(arg);
-    free(vector);
+    free(g_vector);
 
     pthread_exit(NULL);
 
