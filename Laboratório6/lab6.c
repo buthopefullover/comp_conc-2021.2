@@ -121,7 +121,7 @@ int main(int argc, char *argv[]) {
     }
     results[thread] = *ret;
 
-    printf("Somatório da Thread %d: %d \n", thread+1, *ret);
+    //printf("Somatório da Thread %d: %d \n", thread+1, *ret);
 
     free(ret);
   }
@@ -134,7 +134,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  printf ("FIM.\n");
+  printf ("Resultados corretos.\n");
 
   // desaloca variaveis e termina
   free(results);
