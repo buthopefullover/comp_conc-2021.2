@@ -35,7 +35,7 @@ class V {
         return this.array[index];
     }
 
-    public void setSum (int value){
+    public synchronized void setSum (int value){
         this.sum += value;
     }
 
