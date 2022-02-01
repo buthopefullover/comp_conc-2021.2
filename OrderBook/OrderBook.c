@@ -12,6 +12,13 @@ typedef struct{
 Palavra *Livro;
 int TamanhoPalavras=100;
 
+//variaveis de condicao das threads
+pthread_mutex_t x_mutex;
+pthread_cond_t x_cond;
+int liberaThread = 0;//validador 0 ou 1
+int contaThread=0;
+int bloqueadas = 0;
+
 //acentos a ser incluidos
 char acentoA[] = {"áÁãÃàÀâÂ"};
 char acentoE[] = {"éÉèÈêÊ"};
@@ -20,9 +27,15 @@ char acentoO[] = {"óÓòÒôÔõÕ"};
 char acentoU[] = {"úÚùÙûÛ"};
 char acentoC[] = {"çÇ"};
 
+//numStucts alocadas
 long int numStructs=10;
+//numStructs utilizadas
 long int storedStructs=0;
+
+//num threads
 int nthreads =3;
+
+int nBroad = 0;
 
 
 // funcao para tratar erros com o malloc
@@ -96,25 +109,31 @@ int isAcento2(char ch, char lb){
 
 
 // le o aquivo pegando as palavras e armazenando-as no vetor de struct global (Palavras)
-void readFile(char *fileName)
+void* readFile(void * arg)
 {
-    FILE *file = fopen(fileName, "r");
+    char* fileName = (char*) arg;
+    FILE *file;
     char lookBehind;
-    char ch; //
-    //long int wordCount;
+    char ch; 
+    long int razao;
+    long int limit;
 
     int l = 0;
     int p = 0;
 
-    if (file == NULL)
-        return; // não consegui abrir o arquivo
+    file = fopen(fileName, "r");
+    if (file == NULL){
+        printf("Falha ao abrir o arquivo!");
+        exit(-1); // não consegui abrir o arquivo
+    }
 
     
     numStructs = wordCounter(file);
+    razao = numStructs/(nthreads-1);
+    limit = razao;
 
     rewind(file);
 
-    printf("%ld", numStructs);
 
     Livro = (Palavra*) errorcheck_malloc(sizeof(Palavra)*numStructs);
     for (int i = 0; i < numStructs; i++){
@@ -125,7 +144,6 @@ void readFile(char *fileName)
     {
 
         if(isalnum(ch)){
-            //printf("Palavras[%d]: %d\n", p, l);
             Livro[p].letras[l] = ch;
             l++;
 
@@ -133,30 +151,46 @@ void readFile(char *fileName)
 
         if(isAcento2(ch, lookBehind)){
             Livro[p].letras[l] = lookBehind;
-            //printf("AcentoPalavras[%d]: %d\n", p, (int)Livro[p].letras[l]);
             l++;
             Livro[p].letras[l] = ch;
-            //printf("AcentoPalavras[%d]: %d\n", p, (int)Livro[p].letras[l]));
-            //printf("AcentoPalavras[%d]: %d", p, l+1);
             l++;
             
         }
-        //printf("é isalnum antes: %d, aaaa %d\n", isalnum(lookBehind), isAcento2(Livro[p].letras[l-1], Livro[p].letras[l-2]));
 
         if((isspace(ch)||ch == '-'||ispunct(ch)) && (isalnum(lookBehind)||isAcento2(Livro[p].letras[l-1], Livro[p].letras[l-2]))){
-            //printf("%c ispunc: %d\n", ch, ispunct(ch));
-            //printf("%s ", Livro[p].letras);
-            //printf("Nova palavra: %s\n", Livro[p].letras);
-
             p++;
-            storedStructs++;
+            storedStructs++; // posso só igualar com p antes de finalizar
+            
             l = 0;
+
+            if (p == limit){
+                pthread_mutex_lock(&x_mutex);
+                nBroad++;
+                
+                pthread_mutex_unlock(&x_mutex);
+                pthread_cond_broadcast(&x_cond);
+                
+                
+                limit += razao;
+                
+            }
 
         }
         lookBehind = ch;
     }
+    if (ch == EOF){
+        pthread_mutex_lock(&x_mutex);
+        nBroad++;
 
-    fclose(file);       
+        pthread_mutex_unlock(&x_mutex);
+
+        pthread_cond_broadcast(&x_cond);                
+    }
+        
+    fclose(file);  
+
+    pthread_exit(NULL);
+
 
 }
 
@@ -165,43 +199,41 @@ void writeFile (char *fileName){
 
     if(file == NULL)
     {
-        /* File not created hence exit */
-        printf("Unable to create file.\n");
+        printf("Erro na criação do arquivo.\n");
         exit(EXIT_FAILURE);
     }
 
-    for(int i =(numStructs-storedStructs) ; i<numStructs; i++)//DEUS É BOM O TEMPO TODO
+    for(int i =(numStructs-storedStructs) ; i<numStructs; i++)
     {
         fprintf(file, "%s ", Livro[i].letras);
-
     } 
     fclose(file);
+
 }
 
 int substituiAcento(char a){
     if(isAcento(acentoA, a)){
-        return 97;
+        return 97;//retorna o codigo de a
     
     }        
-    //if(temp1[i+1]==-95 || temp1[i+1]==-127)temp1[i]=97; //transforma em e
     else if(isAcento(acentoE, a)){
-        return 101;
+        return 101;//retorna o codigo de e
     
     }
     else if(isAcento(acentoI,a)){
-        return 105;
+        return 105;//retorna o codigo de i
     
     }
     else if(isAcento(acentoO,a)){
-        return 111;
+        return 111;//retorna o codigo de o
     
     }
     else if(isAcento(acentoU,a)){
-        return 117;
+        return 117;//retorna o codigo de u
     
     }
     else if(isAcento(acentoC,a)){
-        return 99;
+        return 99;//retorna o codigo de c
         
     }
     return 0;
@@ -227,17 +259,8 @@ int stringcomp(char *palavra1, char *palavra2){
         achouAcentoI =0;
         achouAcentoK =0;
         achouAcento =0;
-        //printf("palavra1: %s\n", palavra1);
-        //printf("letra: %c, codigo da letra: %d\n", palavra1[i], palavra1[i]);
-        //printf("letra: %c, codigo da letra: %d\n", palavra1[i+1], palavra1[i+1]);
-        //printf("palavra2: %s\n", palavra2);
-        //printf("letra: %c, codigo da letra: %d\n", palavra2[i], palavra2[i]);
-        //printf("letra: %c, codigo da letra: %d\n", palavra2[i+1], palavra2[i+1]);
-        
         
         if(temp1[i]==-61||temp2[i]==-61){ // tratamos acento na palavra 1
-            //printf("entramos em palavra 1\n");
-            
             
             if(temp1[i]==-61){
                 temp1[i] = substituiAcento(temp1[i+1]);
@@ -269,57 +292,32 @@ int stringcomp(char *palavra1, char *palavra2){
             if(achouAcentoK && !achouAcentoI){
                 if(tolower(temp1[i])>tolower(temp2[k-1]))
                         return 1;
-                    else if(tolower(temp1[i])<tolower(temp2[k-1]))
-                        return -1;
+                else if(tolower(temp1[i])<tolower(temp2[k-1]))
+                    return -1;
             }
 
             if(!achouAcento){
-            if(tolower(temp1[i])>tolower(temp2[k]))
-                return 1;
-            else if(tolower(temp1[i])<tolower(temp2[k]))
-                return-1;
-            
+                if(tolower(temp1[i])>tolower(temp2[k]))
+                    return 1;
+                else if(tolower(temp1[i])<tolower(temp2[k]))
+                    return-1;
             }
-            /*
-            //pfvr não me xinga por fazer isso att: a gerencia
-            if(isAcento( acentoA, temp1[i])==1)i++;
-            if(isAcento( acentoA, temp2[k])==1)k++;
-            
-            if(isAcento( acentoE, temp1[i])==1)i++;
-            if(isAcento( acentoE, temp2[k])==1)k++;
-            
-            if(isAcento( acentoI, temp1[i])==1)i++;
-            if(isAcento( acentoI, temp2[k])==1)k++;
-            
-            if(isAcento( acentoO, temp1[i])==1)i++;
-            if(isAcento( acentoO, temp2[k])==1)k++;
-            
-            if(isAcento( acentoU, temp1[i])==1)i++;
-            if(isAcento( acentoU, temp2[k])==1)k++;
-
-            if(isAcento( acentoC, temp1[i])==1)i++;
-            if(isAcento( acentoC, temp2[k])==1)k++;
-            */
-
-
-
             continue;
         }
         
-        
-        if ( tolower(temp1[i]) > tolower(temp2[k]) ){
+        if ( tolower(temp1[i]) > tolower(temp2[k]) )
             return 1;
-        }
-        else if( tolower(temp1[i]) < tolower(temp2[k]) ){
+        
+        else if( tolower(temp1[i]) < tolower(temp2[k]) )
             return -1;
-        }
+        
             
-    }//   <--- n sei se teria isso aq
+    }
+
     if((strlen(palavra1)-achouAcentoI)>(strlen(palavra2)-achouAcentoK))
         return 1;
     else if((strlen(palavra1)-achouAcentoI)<(strlen(palavra2)-achouAcentoK))
         return -1; 
-    
     
     return strcmp(palavra1, palavra2);
     
@@ -340,9 +338,6 @@ void Merge(Palavra *Lista, int inicio, int meio, int fim)//passar tamanho da str
     for (int i = 0; i < tamanho; i++){
         listaTemporaria[i].letras = (char*) errorcheck_malloc(sizeof(char)*TamanhoPalavras);
     }
-    //printf("Tamanho listatemp: %d\n", tamanho);
-    //printf("Tamanho listatemp: %d\n", tamanho);
-    //Erro(listaTemporaria); //caso tenha problema na alocacao de memoria
 
     for(int i=0; i<tamanho; i++)
     {
@@ -374,7 +369,6 @@ void Merge(Palavra *Lista, int inicio, int meio, int fim)//passar tamanho da str
 
 
 
-//  MERGE SORT
 
 void MergeSort(Palavra *Lista, int inicio, int fim)
 {
@@ -382,7 +376,7 @@ void MergeSort(Palavra *Lista, int inicio, int fim)
     if(inicio < fim){ 
         MergeSort(Lista, inicio, meio);
         MergeSort(Lista, meio+1, fim); 
-        Merge(Lista, inicio, meio, fim); //suspictious
+        Merge(Lista, inicio, meio, fim); 
     }
     return;
 }
@@ -391,45 +385,54 @@ void MergeSort(Palavra *Lista, int inicio, int fim)
 
 void * executaThread(void * arg){
     int ident = *(int *)arg;
-    int razao = numStructs/nthreads;
+    pthread_mutex_lock(&x_mutex);
+
+    while(ident > nBroad){ 
+
+        pthread_cond_wait(&x_cond, &x_mutex);
+    }
+    
+    pthread_mutex_unlock(&x_mutex);
+    
+    int razao = numStructs/(nthreads-1);
     int limite = ident * razao;
-    if(ident == nthreads){
+    if(ident == nthreads-1){
         MergeSort(Livro, (ident-1)* razao, numStructs-1);
-        //printf("limite: %d\n", numStructs-1);
     }
     else{
         MergeSort(Livro, (ident-1)* razao, limite-1);
-        //printf("limite: %d\n", limite-1);
     }
-    
+
     
     pthread_exit(NULL);
 }
 
+
+
+
+
 int main(int argc, char *argv[]) {
     
+    nthreads++;
 
-    readFile("Quem e voce, Alasca_ - John Green (2).txt");
-    //printf("acento: ");
-
-    //printf(" %s", (Livro[1].letras));
-
-
-    //writeFile("saida.txt");
-
-
-/*         for(int i =0; i<200; i++)//DEUS É BOM O TEMPO TODO
-    {
-        printf("palavra %d: %s\n", i, Livro[i].letras);
-    }  */
- 
     //cria duas threads
-    pthread_t tid[nthreads];
-    int ident [nthreads];
+    pthread_t *tid = (pthread_t *) errorcheck_malloc(sizeof(pthread_t) * nthreads);
+    int *ident = (int *) errorcheck_malloc(sizeof(int) * nthreads);
     
+    //inicializa o mutex e a condição
+    pthread_mutex_init(&x_mutex, NULL);
+    pthread_cond_init(&x_cond, NULL);
+
+
     for(int i=0; i<nthreads;i++){
-        ident[i]=i+1;
-        pthread_create(&tid[i], NULL, executaThread, (void *)&ident[i]);
+        ident[i]=i;//ident[i]=i+1;
+        char* fileName = "Quem e voce, Alasca_ - John Green (2).txt";
+        if(i == 0){ 
+            pthread_create(&tid[i], NULL, readFile, (void *)fileName);
+        }
+        else{
+            pthread_create(&tid[i], NULL, executaThread, (void *)&ident[i]);
+        }
     }
 
     //aguarda retornoi das threads
@@ -439,14 +442,12 @@ int main(int argc, char *argv[]) {
         
     }
 
-    //writeFile("sorted.txt");
-
-    for(int i=1; i<nthreads; i++){
-        int razao = numStructs/nthreads;
+    for(int i=1; i<nthreads-1; i++){  
+        int razao = numStructs/(nthreads-1);
         int limite = i * razao; //id da thread * razao
         //int meio = (fim+inicio)/2;
     
-        if(i == nthreads-1){
+        if(i == nthreads-2){
             Merge(Livro, 0, limite -1, numStructs-1);
         }
         else{
@@ -455,10 +456,6 @@ int main(int argc, char *argv[]) {
     } 
     writeFile("sorted.txt");
 
-/*     for(int i =0; i<numStructs; i++)//DEUS É BOM O TEMPO TODO
-    {
-        printf("palavra %d: %s\n", i, Livro[i].letras);
-    }  */
 
     return 0;
 
